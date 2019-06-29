@@ -1,0 +1,12 @@
+[package]
+name = "bf2wasm"
+version = "0.1.0"
+authors = ["Keith Bauer <onesadcookie@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+clap = "~2.33"
+
+[dependencies.walrus]
+git = "https://github.com/OneSadCookie/walrus.git"
+branch = "master"
