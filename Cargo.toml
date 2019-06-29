@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 clap = "~2.33"
+failure = "0.1.5"
 
 [dependencies.walrus]
 git = "https://github.com/OneSadCookie/walrus.git"

@@ -1,7 +1,62 @@
 use clap::{ Arg, App };
-use std::{ fs, io };
-use walrus::*;
-use walrus::ir::*;
+use failure::{ Backtrace, Context, Fail, ResultExt };
+use std::fmt::{ self, Display };
+use std::fs;
+use walrus::{
+    BlockBuilder, FunctionBuilder, FunctionId, LocalId, MemoryId, Module, ModuleConfig, ValType
+};
+use walrus::ir::{ BinaryOp, ExprId, ExtendedLoad, LoadKind, MemArg, StoreKind };
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Fail)]
+pub enum ErrorKind {
+    #[fail(display = "I/O error")]
+    Io,
+
+    #[fail(display = "Invalid input")]
+    InvalidInput,
+
+    #[fail(display = "Internal error; unable to generate WebAssembly")]
+    Ice,
+}
+
+#[derive(Debug)]
+pub struct Error {
+    inner: Context<ErrorKind>,
+}
+
+impl Fail for Error {
+    fn cause(&self) -> Option<&Fail> {
+        self.inner.cause()
+    }
+
+    fn backtrace(&self) -> Option<&Backtrace> {
+        self.inner.backtrace()
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Display::fmt(&self.inner, f)
+    }
+}
+
+impl Error {
+    pub fn kind(&self) -> ErrorKind {
+        *self.inner.get_context()
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Error {
+        Error { inner: Context::new(kind) }
+    }
+}
+
+impl From<Context<ErrorKind>> for Error {
+    fn from(inner: Context<ErrorKind>) -> Error {
+        Error { inner: inner }
+    }
+}
 
 struct BfContext {
     memory: MemoryId,
@@ -18,7 +73,7 @@ struct BfContext {
 
 impl BfContext {
 
-    fn build(&self, bf: &[u8], builder: &mut BlockBuilder, consume_all: bool) -> io::Result<usize> {
+    fn build(&self, bf: &[u8], builder: &mut BlockBuilder, consume_all: bool) -> Result<usize, Error> {
         let mut i = 0;
         while i < bf.len() {
             let byte = bf[i];
@@ -80,22 +135,22 @@ impl BfContext {
                     break;
                 },
                 _ => {
-                    return Err(io::Error::from(io::ErrorKind::InvalidData))
+                    Err(ErrorKind::InvalidInput)?;
                 }
             }
         }
         if consume_all && i < bf.len() {
-            Err(io::Error::from(io::ErrorKind::InvalidData))
+            Err(ErrorKind::InvalidInput)?;
         } else if !consume_all && i == bf.len() {
-            Err(io::Error::from(io::ErrorKind::InvalidData))
-        } else {
-            Ok(i)
+            Err(ErrorKind::InvalidInput)?;
         }
+
+        Ok(i)
     }
 
 }
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), Error> {
     let matches = App::new("bf2wasm")
         .version("0.1")
         .author("Keith Bauer <onesadcookie@gmail.com>")
@@ -117,7 +172,7 @@ fn main() -> io::Result<()> {
         .get_matches();
 
     let input_path = matches.value_of_os("input").unwrap();
-    let bf = fs::read(input_path)?;
+    let bf = fs::read(input_path).context(ErrorKind::Io)?;
 
     let output_path = matches.value_of_os("output").unwrap();
 
@@ -158,8 +213,8 @@ fn main() -> io::Result<()> {
     let main_func = builder.finish(main_func_type, vec![], vec![begin], &mut module);
     module.exports.add("main", main_func);
 
-    let wasm = module.emit_wasm().unwrap();
-    fs::write(output_path, wasm)?;
+    let wasm = module.emit_wasm().context(ErrorKind::Ice)?;
+    fs::write(output_path, wasm).context(ErrorKind::Io)?;
 
     Ok(())
 }
