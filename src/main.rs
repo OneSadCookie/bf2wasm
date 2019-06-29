@@ -18,7 +18,7 @@ struct BfContext {
 
 impl BfContext {
 
-    fn build(&self, bf: &[u8], builder: &mut BlockBuilder) -> io::Result<usize> {
+    fn build(&self, bf: &[u8], builder: &mut BlockBuilder, consume_all: bool) -> io::Result<usize> {
         let mut i = 0;
         while i < bf.len() {
             let byte = bf[i];
@@ -67,7 +67,7 @@ impl BfContext {
                     let break_ = loop_body.br_if(eq_zero, break_label, Box::new([]));
                     loop_body.expr(break_);
                     i += 1;
-                    i += self.build(&bf[i..], &mut loop_body)?;
+                    i += self.build(&bf[i..], &mut loop_body, false)?;
                     let continue_ = loop_body.br(continue_label, Box::new([]));
                     loop_body.expr(continue_);
                     drop(loop_body);
@@ -76,14 +76,21 @@ impl BfContext {
                     builder.expr(From::from(break_label));
                 },
                 b']' => {
-                    return Ok(i + 1);
+                    i += 1;
+                    break;
                 },
                 _ => {
                     return Err(io::Error::from(io::ErrorKind::InvalidData))
                 }
             }
         }
-        Ok(i)
+        if consume_all && i < bf.len() {
+            Err(io::Error::from(io::ErrorKind::InvalidData))
+        } else if !consume_all && i == bf.len() {
+            Err(io::Error::from(io::ErrorKind::InvalidData))
+        } else {
+            Ok(i)
+        }
     }
 
 }
@@ -143,7 +150,7 @@ fn main() -> io::Result<()> {
     let mut block = builder.block(Box::new([]), Box::new([]));
     let zero_p = block.local_set(context.pointer, context.zero);
     block.expr(zero_p);
-    context.build(&bf, &mut block)?;
+    context.build(&bf, &mut block, true)?;
     let block_id = block.id();
     drop(block);
     let begin = From::from(block_id);
