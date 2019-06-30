@@ -1,11 +1,11 @@
-use clap::{ Arg, App };
-use failure::{ Backtrace, Context, Fail, ResultExt };
-use std::fmt::{ self, Display };
+use clap::{App, Arg};
+use failure::{Backtrace, Context, Fail, ResultExt};
+use std::fmt::{self, Display};
 use std::fs;
+use walrus::ir::{BinaryOp, ExprId, ExtendedLoad, LoadKind, MemArg, StoreKind};
 use walrus::{
-    BlockBuilder, FunctionBuilder, FunctionId, LocalId, MemoryId, Module, ModuleConfig, ValType
+    BlockBuilder, FunctionBuilder, FunctionId, LocalId, MemoryId, Module, ModuleConfig, ValType,
 };
-use walrus::ir::{ BinaryOp, ExprId, ExtendedLoad, LoadKind, MemArg, StoreKind };
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Fail)]
 pub enum ErrorKind {
@@ -48,7 +48,9 @@ impl Error {
 
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Error {
-        Error { inner: Context::new(kind) }
+        Error {
+            inner: Context::new(kind),
+        }
     }
 }
 
@@ -72,8 +74,12 @@ struct BfContext {
 }
 
 impl BfContext {
-
-    fn build(&self, bf: &[u8], builder: &mut BlockBuilder, consume_all: bool) -> Result<usize, Error> {
+    fn build(
+        &self,
+        bf: &[u8],
+        builder: &mut BlockBuilder,
+        consume_all: bool,
+    ) -> Result<usize, Error> {
         let mut i = 0;
         while i < bf.len() {
             let byte = bf[i];
@@ -83,36 +89,54 @@ impl BfContext {
                     let set = builder.local_set(self.pointer, p);
                     builder.expr(set);
                     i += 1;
-                },
+                }
                 b'<' => {
                     let p = builder.binop(BinaryOp::I32Sub, self.p, self.one);
                     let set = builder.local_set(self.pointer, p);
                     builder.expr(set);
                     i += 1;
-                },
+                }
                 b'+' => {
                     let at_p = builder.binop(BinaryOp::I32Add, self.at_p, self.one);
-                    let store = builder.store(self.memory, StoreKind::I32_8 { atomic: false }, self.one_byte, self.p, at_p);
+                    let store = builder.store(
+                        self.memory,
+                        StoreKind::I32_8 { atomic: false },
+                        self.one_byte,
+                        self.p,
+                        at_p,
+                    );
                     builder.expr(store);
                     i += 1;
-                },
+                }
                 b'-' => {
                     let at_p = builder.binop(BinaryOp::I32Sub, self.at_p, self.one);
-                    let store = builder.store(self.memory, StoreKind::I32_8 { atomic: false }, self.one_byte, self.p, at_p);
+                    let store = builder.store(
+                        self.memory,
+                        StoreKind::I32_8 { atomic: false },
+                        self.one_byte,
+                        self.p,
+                        at_p,
+                    );
                     builder.expr(store);
                     i += 1;
-                },
+                }
                 b'.' => {
                     let call = builder.call(self.putc_func, Box::new([self.at_p]));
                     builder.expr(call);
                     i += 1;
-                },
+                }
                 b',' => {
                     let at_p = builder.call(self.getc_func, Box::new([]));
-                    let store = builder.store(self.memory, StoreKind::I32_8 { atomic: false }, self.one_byte, self.p, at_p);
+                    let store = builder.store(
+                        self.memory,
+                        StoreKind::I32_8 { atomic: false },
+                        self.one_byte,
+                        self.p,
+                        at_p,
+                    );
                     builder.expr(store);
                     i += 1;
-                },
+                }
                 b'[' => {
                     let mut loop_wrapper = builder.block(Box::new([]), Box::new([]));
                     let break_label = loop_wrapper.id();
@@ -129,11 +153,11 @@ impl BfContext {
                     loop_wrapper.expr(From::from(continue_label));
                     drop(loop_wrapper);
                     builder.expr(From::from(break_label));
-                },
+                }
                 b']' => {
                     i += 1;
                     break;
-                },
+                }
                 _ => {
                     Err(ErrorKind::InvalidInput)?;
                 }
@@ -147,7 +171,6 @@ impl BfContext {
 
         Ok(i)
     }
-
 }
 
 fn main() -> Result<(), Error> {
@@ -155,20 +178,24 @@ fn main() -> Result<(), Error> {
         .version("0.1")
         .author("Keith Bauer <onesadcookie@gmail.com>")
         .about("Convert Brainfuck to WebAssembly")
-        .arg(Arg::with_name("input")
-            .short("i")
-            .long("input")
-            .value_name("FILE.bf")
-            .help("The Brainfuck source to compile")
-            .takes_value(true)
-            .required(true))
-        .arg(Arg::with_name("output")
-            .short("o")
-            .long("output")
-            .value_name("FILE.wasm")
-            .help("The WebAssembly output file")
-            .takes_value(true)
-            .required(true))
+        .arg(
+            Arg::with_name("input")
+                .short("i")
+                .long("input")
+                .value_name("FILE.bf")
+                .help("The Brainfuck source to compile")
+                .takes_value(true)
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("output")
+                .short("o")
+                .long("output")
+                .value_name("FILE.wasm")
+                .help("The WebAssembly output file")
+                .takes_value(true)
+                .required(true),
+        )
         .get_matches();
 
     let input_path = matches.value_of_os("input").unwrap();
@@ -188,8 +215,13 @@ fn main() -> Result<(), Error> {
     let (memory, _) = module.add_import_memory("env", "memory", false, 0, None);
     let pointer = module.locals.add(ValType::I32);
     let p = builder.local_get(pointer);
-    let zext_u8 = LoadKind::I32_8 { kind: ExtendedLoad::ZeroExtend };
-    let one_byte = walrus::ir::MemArg { align: 1, offset: 0 };
+    let zext_u8 = LoadKind::I32_8 {
+        kind: ExtendedLoad::ZeroExtend,
+    };
+    let one_byte = walrus::ir::MemArg {
+        align: 1,
+        offset: 0,
+    };
     let context = BfContext {
         memory: memory,
         putc_func: module.add_import_func("env", "putc", putc_type).0,
@@ -199,9 +231,9 @@ fn main() -> Result<(), Error> {
         zero: builder.i32_const(0),
         one: builder.i32_const(1),
         p: p,
-        at_p: builder.load(memory, zext_u8, one_byte, p)
+        at_p: builder.load(memory, zext_u8, one_byte, p),
     };
-    
+
     let mut block = builder.block(Box::new([]), Box::new([]));
     let zero_p = block.local_set(context.pointer, context.zero);
     block.expr(zero_p);
